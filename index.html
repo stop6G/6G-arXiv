@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>6G-arXiv Visualization - stop6g.eu </title>
+    <title>6G-arXiv Visualization</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-cloud/1.2.5/d3.layout.cloud.min.js"></script>
@@ -14,7 +14,7 @@
             background-color: #050505;
             color: #ffffff;
         }
-        /* Custom scrollbar */
+        
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #050505; }
         ::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
@@ -31,11 +31,9 @@
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
         text { 
-            /* Specific transitions prevent hit-box lag */
             transition: opacity 0.3s, filter 0.3s, text-shadow 0.3s;
             cursor: pointer; 
             text-shadow: 0 0 10px rgba(0,0,0,0.5);
-            /* Ensure pointer events are captured on the fill */
             pointer-events: visibleFill; 
         }
         text:hover { 
@@ -44,13 +42,13 @@
             text-shadow: 0 0 20px currentColor; 
             z-index: 10;
         }
-        /* Fade out other text on hover */
+        
         .has-hover text:not(:hover) {
             opacity: 0.3;
             filter: blur(1px);
         }
 
-        /* Sidebar transitions */
+        
         #details-sidebar {
             transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
         }
@@ -61,7 +59,7 @@
             background-color: rgba(255,255,255,0.03);
         }
 
-        /* Tab Styles */
+        
         .tab-btn {
             position: relative;
             transition: all 0.3s ease;
@@ -76,26 +74,26 @@
             left: 0;
             width: 100%;
             height: 2px;
-            background-color: #3b82f6; /* blue-500 */
+            background-color: #3b82f6; 
             box-shadow: 0 0 10px #3b82f6;
         }
         .tab-btn:not(.active) {
-            color: #6b7280; /* gray-500 */
+            color: #6b7280; 
         }
         .tab-btn:not(.active):hover {
-            color: #9ca3af; /* gray-400 */
+            color: #9ca3af; 
         }
     </style>
 </head>
 <body class="min-h-screen flex flex-col items-center justify-center p-4 overflow-hidden relative">
 
-    <!-- Background decorative gradients -->
+    
     <div class="absolute top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
         <div class="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-900/10 rounded-full blur-[100px]"></div>
         <div class="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-900/10 rounded-full blur-[100px]"></div>
     </div>
 
-    <!-- Header -->
+    
     <header class="text-center mb-6 z-10 transition-all duration-500" id="main-header">
         <div class="flex flex-col items-center gap-3">
             <div class="flex items-center gap-3">
@@ -119,29 +117,29 @@
         </div>
     </header>
 
-    <!-- Tabs -->
+    
     <div class="flex gap-8 mb-4 z-10">
         <button id="tab-topics" class="tab-btn active text-sm font-mono tracking-wider font-bold uppercase pb-1">Topics</button>
         <button id="tab-authors" class="tab-btn text-sm font-mono tracking-wider font-bold uppercase pb-1">Authors</button>
     </div>
 
-    <!-- Main Viz Area -->
+    
     <div id="viz-container" class="relative w-full max-w-7xl aspect-[16/9] bg-[#0a0a0a] rounded-3xl shadow-2xl border border-white/10 flex overflow-hidden backdrop-blur-sm transition-all duration-500">
         
-        <!-- Loading State -->
+        
         <div id="loading" class="absolute inset-0 flex flex-col items-center justify-center bg-black/80 z-20 backdrop-blur-sm transition-opacity duration-500">
             <div class="loader mb-4"></div>
             <p id="status-text" class="text-sm font-mono text-blue-400">CONNECTING TO REPO...</p>
         </div>
 
-        <!-- SVG Output -->
+        
         <div class="flex-grow relative overflow-hidden h-full">
             <svg id="word-cloud" class="w-full h-full opacity-0 transition-opacity duration-1000"></svg>
         </div>
 
-        <!-- Details Sidebar (Hidden by default via transform) -->
+        
         <div id="details-sidebar" class="absolute top-0 right-0 w-full md:w-[450px] h-full bg-[#0f0f0f]/95 border-l border-white/10 backdrop-blur-md transform translate-x-full flex flex-col z-30 shadow-2xl">
-            <!-- Sidebar Header -->
+            
             <div class="p-6 border-b border-white/10 flex justify-between items-start bg-[#0f0f0f]">
                 <div>
                     <div class="text-xs text-blue-400 font-mono mb-1" id="sidebar-label">SELECTED TOPIC</div>
@@ -153,14 +151,14 @@
                 </button>
             </div>
             
-            <!-- Sidebar Content -->
+            
             <div id="sidebar-content" class="flex-1 overflow-y-auto p-4 space-y-3">
-                <!-- Papers will be injected here -->
+                
             </div>
         </div>
     </div>
 
-    <!-- Footer / Stats -->
+    
     <div class="mt-6 flex flex-wrap justify-center gap-8 text-xs text-gray-500 font-mono">
         <div id="stat-papers">TOTAL PAPERS: 0</div>
         <div id="stat-count">WORDS: 0</div>
@@ -168,21 +166,21 @@
     </div>
 
     <script>
-        // --- Configuration ---
+        
         const DATA_URL = "https://raw.githubusercontent.com/stop6G/6G-arXiv/refs/heads/main/arxiv_6g_data.csv";
         const WORD_LIMIT = 250; 
-        let currentMode = 'topics'; // 'topics' or 'authors'
-        let cachedPapers = []; // Store parsed data
+        let currentMode = 'topics'; 
+        let cachedPapers = []; 
         
-        // Initialize download link with the correct URL
+        
         document.getElementById('download-link').href = DATA_URL;
 
-        // Modern "Cyber" Palette for dark mode
+        
         const PALETTE = [
             "#ffffff", "#60a5fa", "#22d3ee", "#818cf8", "#c084fc", "#f472b6", "#38bdf8", "#94a3b8"
         ];
 
-        // Custom stop words
+        
         const STOP_WORDS = new Set([
             "a", "an", "the", "and", "of", "in", "on", "for", "to", "with", "by", "at", "from", 
             "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "do", "does", "did",
@@ -197,7 +195,7 @@
             "6g", "5g", "wireless", "communication", "communications", "mobile", "cellular"
         ]);
 
-        // --- Elements ---
+        
         const svgElement = d3.select("#word-cloud");
         const loadingEl = document.getElementById('loading');
         const statusText = document.getElementById('status-text');
@@ -206,11 +204,11 @@
         const statPapers = document.getElementById('stat-papers');
         const container = document.getElementById('viz-container');
         
-        // Tab Elements
+        
         const tabTopics = document.getElementById('tab-topics');
         const tabAuthors = document.getElementById('tab-authors');
 
-        // Sidebar Elements
+        
         const sidebar = document.getElementById('details-sidebar');
         const sidebarTitle = document.getElementById('sidebar-title');
         const sidebarCount = document.getElementById('sidebar-count');
@@ -218,7 +216,7 @@
         const sidebarLabel = document.getElementById('sidebar-label');
         const closeSidebarBtn = document.getElementById('close-sidebar');
 
-        // --- Initialization ---
+        
         window.addEventListener('load', () => {
             document.fonts.ready.then(fetchData);
         });
@@ -228,7 +226,7 @@
         tabTopics.addEventListener('click', () => switchTab('topics'));
         tabAuthors.addEventListener('click', () => switchTab('authors'));
 
-        // Resize handler
+        
         let resizeTimer;
         window.addEventListener('resize', () => {
             clearTimeout(resizeTimer);
@@ -247,7 +245,7 @@
             if (currentMode === mode) return;
             currentMode = mode;
             
-            // UI Toggle
+            
             if (mode === 'topics') {
                 tabTopics.classList.add('active');
                 tabAuthors.classList.remove('active');
@@ -260,7 +258,7 @@
             renderView();
         }
 
-        // --- Logic ---
+        
 
         async function fetchData() {
             try {
@@ -283,7 +281,7 @@
                 const papers = extractData(csvText);
                 if (papers.length === 0) throw new Error("No data found in CSV.");
                 
-                cachedPapers = papers; // Store for switching
+                cachedPapers = papers; 
                 statPapers.textContent = `TOTAL PAPERS: ${papers.length}`;
 
                 renderView();
@@ -316,7 +314,7 @@
             }, 50);
         }
 
-        // Improved CSV Parser
+        
         function extractData(csvText) {
             const lines = csvText.split(/\r?\n/);
             if (lines.length < 2) return [];
@@ -338,7 +336,7 @@
                 const line = lines[i].trim();
                 if (!line) continue;
                 
-                // Robust manual CSV Parser logic
+                
                 const row = [];
                 let currentStr = '';
                 let inQuotes = false;
@@ -398,8 +396,8 @@
 
             papers.forEach(paper => {
                 if (!paper.authors) return;
-                // Split authors by comma (assumption based on common CSV formats)
-                // Remove extra whitespace
+                
+                
                 const authorsList = paper.authors.split(',').map(a => a.trim()).filter(a => a.length > 1);
                 
                 authorsList.forEach(author => {
@@ -412,7 +410,7 @@
             return Object.entries(counts)
                 .map(([text, data]) => ({ text, value: data.value, papers: data.papers }))
                 .sort((a, b) => b.value - a.value)
-                .slice(0, 100); // Top 100 authors
+                .slice(0, 100); 
         }
 
         function generateCloud(words) {
@@ -497,17 +495,17 @@
         }
 
         function showPaperDetails(itemData) {
-            // Update Sidebar Header
+            
             sidebarLabel.textContent = currentMode === 'topics' ? "SELECTED TOPIC" : "SELECTED AUTHOR";
             sidebarTitle.textContent = itemData.text;
             sidebarCount.textContent = `Found in ${itemData.value} papers`;
 
-            // Clear old content
+            
             sidebarContent.innerHTML = '';
 
             const fragment = document.createDocumentFragment();
             
-            // Deduplicate papers by title
+            
             const uniquePapers = Array.from(new Set(itemData.papers.map(p => p.title)))
                 .map(title => itemData.papers.find(p => p.title === title));
 
