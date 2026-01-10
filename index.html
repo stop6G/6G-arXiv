@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>6G-arXiv Visualization</title>
+    <title>6G-arXiv Visualization - stop6g.eu </title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/d3-cloud/1.2.5/d3.layout.cloud.min.js"></script>
@@ -60,6 +60,31 @@
         .paper-card:hover {
             background-color: rgba(255,255,255,0.03);
         }
+
+        /* Tab Styles */
+        .tab-btn {
+            position: relative;
+            transition: all 0.3s ease;
+        }
+        .tab-btn.active {
+            color: #ffffff;
+        }
+        .tab-btn.active::after {
+            content: '';
+            position: absolute;
+            bottom: -4px;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background-color: #3b82f6; /* blue-500 */
+            box-shadow: 0 0 10px #3b82f6;
+        }
+        .tab-btn:not(.active) {
+            color: #6b7280; /* gray-500 */
+        }
+        .tab-btn:not(.active):hover {
+            color: #9ca3af; /* gray-400 */
+        }
     </style>
 </head>
 <body class="min-h-screen flex flex-col items-center justify-center p-4 overflow-hidden relative">
@@ -94,6 +119,12 @@
         </div>
     </header>
 
+    <!-- Tabs -->
+    <div class="flex gap-8 mb-4 z-10">
+        <button id="tab-topics" class="tab-btn active text-sm font-mono tracking-wider font-bold uppercase pb-1">Topics</button>
+        <button id="tab-authors" class="tab-btn text-sm font-mono tracking-wider font-bold uppercase pb-1">Authors</button>
+    </div>
+
     <!-- Main Viz Area -->
     <div id="viz-container" class="relative w-full max-w-7xl aspect-[16/9] bg-[#0a0a0a] rounded-3xl shadow-2xl border border-white/10 flex overflow-hidden backdrop-blur-sm transition-all duration-500">
         
@@ -113,7 +144,7 @@
             <!-- Sidebar Header -->
             <div class="p-6 border-b border-white/10 flex justify-between items-start bg-[#0f0f0f]">
                 <div>
-                    <div class="text-xs text-blue-400 font-mono mb-1">SELECTED TOPIC</div>
+                    <div class="text-xs text-blue-400 font-mono mb-1" id="sidebar-label">SELECTED TOPIC</div>
                     <h2 id="sidebar-title" class="text-3xl font-bold text-white capitalize">Topic</h2>
                     <p id="sidebar-count" class="text-sm text-gray-400 mt-1">Found in 12 papers</p>
                 </div>
@@ -140,6 +171,8 @@
         // --- Configuration ---
         const DATA_URL = "https://raw.githubusercontent.com/stop6G/6G-arXiv/refs/heads/main/arxiv_6g_data.csv";
         const WORD_LIMIT = 250; 
+        let currentMode = 'topics'; // 'topics' or 'authors'
+        let cachedPapers = []; // Store parsed data
         
         // Initialize download link with the correct URL
         document.getElementById('download-link').href = DATA_URL;
@@ -173,36 +206,59 @@
         const statPapers = document.getElementById('stat-papers');
         const container = document.getElementById('viz-container');
         
+        // Tab Elements
+        const tabTopics = document.getElementById('tab-topics');
+        const tabAuthors = document.getElementById('tab-authors');
+
         // Sidebar Elements
         const sidebar = document.getElementById('details-sidebar');
         const sidebarTitle = document.getElementById('sidebar-title');
         const sidebarCount = document.getElementById('sidebar-count');
         const sidebarContent = document.getElementById('sidebar-content');
+        const sidebarLabel = document.getElementById('sidebar-label');
         const closeSidebarBtn = document.getElementById('close-sidebar');
 
         // --- Initialization ---
-        // Ensure fonts are loaded before starting to prevent bounding box errors (overlaps)
         window.addEventListener('load', () => {
             document.fonts.ready.then(fetchData);
         });
         
-        closeSidebarBtn.addEventListener('click', () => {
-            sidebar.classList.add('translate-x-full');
-            d3.select("#viz-container").classed("has-hover", false); // Remove dimming
-            // Remove active state from all words
-            svgElement.selectAll("text").style("opacity", 1).style("filter", "none");
-        });
+        closeSidebarBtn.addEventListener('click', closeSidebar);
+        
+        tabTopics.addEventListener('click', () => switchTab('topics'));
+        tabAuthors.addEventListener('click', () => switchTab('authors'));
 
         // Resize handler
         let resizeTimer;
         window.addEventListener('resize', () => {
             clearTimeout(resizeTimer);
             resizeTimer = setTimeout(() => {
-                if (window.lastProcessedWords) {
-                    generateCloud(window.lastProcessedWords);
-                }
+                renderView();
             }, 500);
         });
+
+        function closeSidebar() {
+            sidebar.classList.add('translate-x-full');
+            d3.select("#viz-container").classed("has-hover", false);
+            svgElement.selectAll("text").style("opacity", 1).style("filter", "none");
+        }
+
+        function switchTab(mode) {
+            if (currentMode === mode) return;
+            currentMode = mode;
+            
+            // UI Toggle
+            if (mode === 'topics') {
+                tabTopics.classList.add('active');
+                tabAuthors.classList.remove('active');
+            } else {
+                tabTopics.classList.remove('active');
+                tabAuthors.classList.add('active');
+            }
+            
+            closeSidebar();
+            renderView();
+        }
 
         // --- Logic ---
 
@@ -227,16 +283,37 @@
                 const papers = extractData(csvText);
                 if (papers.length === 0) throw new Error("No data found in CSV.");
                 
-                // Update total papers stat
+                cachedPapers = papers; // Store for switching
                 statPapers.textContent = `TOTAL PAPERS: ${papers.length}`;
 
-                const wordCounts = countWords(papers);
-                window.lastProcessedWords = wordCounts;
-                
-                generateCloud(wordCounts);
+                renderView();
             } catch (err) {
                 statusText.textContent = "Error: " + err.message;
             }
+        }
+
+        function renderView() {
+            if (cachedPapers.length === 0) return;
+
+            loadingEl.style.display = 'flex';
+            loadingEl.style.opacity = '1';
+            statusText.textContent = currentMode === 'topics' ? "ANALYZING TOPICS..." : "ANALYZING AUTHORS...";
+            svgElement.style.opacity = '0';
+
+            setTimeout(() => {
+                let data;
+                if (currentMode === 'topics') {
+                    data = countWords(cachedPapers);
+                    statMax.textContent = `TOP TOPIC: ${data[0]?.text.toUpperCase() || '-'} (${data[0]?.value || 0})`;
+                } else {
+                    data = countAuthors(cachedPapers);
+                    statMax.textContent = `TOP AUTHOR: ${data[0]?.text.toUpperCase() || '-'} (${data[0]?.value || 0})`;
+                }
+                
+                statCount.textContent = `${currentMode === 'topics' ? 'WORDS' : 'AUTHORS'}: ${data.length}`;
+                window.lastProcessedWords = data;
+                generateCloud(data);
+            }, 50);
         }
 
         // Improved CSV Parser
@@ -277,7 +354,6 @@
                         currentStr += char;
                     }
                 }
-                // Push the last field
                 row.push(currentStr.trim().replace(/^"|"$/g, '').replace(/""/g, '"'));
 
                 if (row[titleIdx]) {
@@ -295,9 +371,7 @@
 
         function countWords(papers) {
             const counts = {};
-            let maxCount = 0;
-            let topWord = '';
-
+            
             papers.forEach(paper => {
                 const words = paper.title.toLowerCase()
                     .replace(/[^\w\s-]/g, '')
@@ -306,33 +380,39 @@
                 words.forEach(word => {
                     word = word.replace(/^-+|-+$/g, '');
                     if (word.length > 2 && !STOP_WORDS.has(word) && !/^\d+$/.test(word)) {
-                        
-                        if (!counts[word]) {
-                            counts[word] = { value: 0, papers: [] };
-                        }
-                        
+                        if (!counts[word]) counts[word] = { value: 0, papers: [] };
                         counts[word].value++;
-                        counts[word].papers.push(paper); // Link paper to word
-
-                        if (counts[word].value > maxCount) {
-                            maxCount = counts[word].value;
-                            topWord = word;
-                        }
+                        counts[word].papers.push(paper);
                     }
                 });
             });
 
-            statCount.textContent = `WORDS: ${Object.keys(counts).length}`;
-            statMax.textContent = `TOP TOPIC: ${topWord.toUpperCase()} (${maxCount})`;
-
             return Object.entries(counts)
-                .map(([text, data]) => ({ 
-                    text, 
-                    value: data.value, 
-                    papers: data.papers 
-                }))
+                .map(([text, data]) => ({ text, value: data.value, papers: data.papers }))
                 .sort((a, b) => b.value - a.value)
                 .slice(0, WORD_LIMIT);
+        }
+
+        function countAuthors(papers) {
+            const counts = {};
+
+            papers.forEach(paper => {
+                if (!paper.authors) return;
+                // Split authors by comma (assumption based on common CSV formats)
+                // Remove extra whitespace
+                const authorsList = paper.authors.split(',').map(a => a.trim()).filter(a => a.length > 1);
+                
+                authorsList.forEach(author => {
+                    if (!counts[author]) counts[author] = { value: 0, papers: [] };
+                    counts[author].value++;
+                    counts[author].papers.push(paper);
+                });
+            });
+
+            return Object.entries(counts)
+                .map(([text, data]) => ({ text, value: data.value, papers: data.papers }))
+                .sort((a, b) => b.value - a.value)
+                .slice(0, 100); // Top 100 authors
         }
 
         function generateCloud(words) {
@@ -349,7 +429,7 @@
             
             const isMobile = width < 600;
             const baseSize = isMobile ? 8 : 10; 
-            const maxSize = isMobile ? 40 : 70; // Reduced max from 80 to 70 for better shape
+            const maxSize = isMobile ? 40 : 70;
 
             const fontScale = d3.scalePow().exponent(0.8)
                 .domain([minVal, maxVal])
@@ -358,9 +438,9 @@
             const layout = d3.layout.cloud()
                 .size([width, height])
                 .words(words)
-                .padding(5) // Back to tight padding
+                .padding(5) 
                 .rotate(() => 0) 
-                .font("Inter") // Font is now guaranteed loaded
+                .font("Inter")
                 .fontWeight(d => d.value > maxVal * 0.4 ? 800 : 400)
                 .fontSize(d => fontScale(d.value))
                 .on("end", draw);
@@ -382,7 +462,7 @@
                     .enter().append("text")
                     .style("font-size", "0px")
                     .style("font-family", "Inter")
-                    .style("dominant-baseline", "central") // Fixes vertical alignment for click accuracy
+                    .style("dominant-baseline", "central")
                     .style("fill", (d, i) => {
                          if (i < 5) return PALETTE[i + 1];
                          if (i < 30) return "#ffffff";
@@ -395,7 +475,7 @@
                     .on("mouseover", function(event, d) {
                         if (!sidebar.classList.contains('translate-x-full')) return;
                         d3.select("#viz-container").classed("has-hover", true);
-                        d3.select(this).raise(); // Brings the hovered word to front (DOM order) so it captures clicks
+                        d3.select(this).raise();
                     })
                     .on("mouseout", function() {
                         if (!sidebar.classList.contains('translate-x-full')) return;
@@ -412,24 +492,24 @@
                     .ease(d3.easeBackOut)
                     .style("font-size", d => `${d.size}px`);
 
-                texts.append("title").text(d => `Click to see ${d.value} papers about "${d.text}"`);
+                texts.append("title").text(d => `Click to see ${d.value} papers for "${d.text}"`);
             }
         }
 
-        function showPaperDetails(wordData) {
+        function showPaperDetails(itemData) {
             // Update Sidebar Header
-            sidebarTitle.textContent = wordData.text;
-            sidebarCount.textContent = `Found in ${wordData.value} titles`;
+            sidebarLabel.textContent = currentMode === 'topics' ? "SELECTED TOPIC" : "SELECTED AUTHOR";
+            sidebarTitle.textContent = itemData.text;
+            sidebarCount.textContent = `Found in ${itemData.value} papers`;
 
             // Clear old content
             sidebarContent.innerHTML = '';
 
-            // Generate list
             const fragment = document.createDocumentFragment();
             
-            // Deduplicate papers by title just in case
-            const uniquePapers = Array.from(new Set(wordData.papers.map(p => p.title)))
-                .map(title => wordData.papers.find(p => p.title === title));
+            // Deduplicate papers by title
+            const uniquePapers = Array.from(new Set(itemData.papers.map(p => p.title)))
+                .map(title => itemData.papers.find(p => p.title === title));
 
             uniquePapers.forEach(paper => {
                 const card = document.createElement('div');
@@ -437,7 +517,6 @@
                 
                 const safeTitle = paper.title.replace(/</g, "&lt;").replace(/>/g, "&gt;");
                 const safeAuthors = paper.authors.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-                // Clean up date (YYYY-MM-DD)
                 const dateStr = paper.date.split('T')[0] || "Unknown Date";
 
                 card.innerHTML = `
@@ -455,16 +534,12 @@
             });
 
             sidebarContent.appendChild(fragment);
-
-            // Open Sidebar
             sidebar.classList.remove('translate-x-full');
         }
 
-        // Close sidebar if clicking outside words area
         container.addEventListener('click', (e) => {
             if (e.target.id === 'viz-container' || e.target.nodeName === 'svg') {
-                sidebar.classList.add('translate-x-full');
-                d3.select("#viz-container").classed("has-hover", false);
+                closeSidebar();
             }
         });
 
