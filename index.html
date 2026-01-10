@@ -121,6 +121,7 @@
     <div class="flex gap-8 mb-4 z-10">
         <button id="tab-topics" class="tab-btn active text-sm font-mono tracking-wider font-bold uppercase pb-1">Topics</button>
         <button id="tab-authors" class="tab-btn text-sm font-mono tracking-wider font-bold uppercase pb-1">Authors</button>
+        <button id="tab-years" class="tab-btn text-sm font-mono tracking-wider font-bold uppercase pb-1">Years</button>
     </div>
 
     
@@ -169,7 +170,7 @@
         
         const DATA_URL = "https://raw.githubusercontent.com/stop6G/6G-arXiv/refs/heads/main/arxiv_6g_data.csv";
         const WORD_LIMIT = 250; 
-        let currentMode = 'topics'; 
+        let currentMode = 'topics'; // 'topics', 'authors', or 'years'
         let cachedPapers = []; 
         
         
@@ -207,6 +208,7 @@
         
         const tabTopics = document.getElementById('tab-topics');
         const tabAuthors = document.getElementById('tab-authors');
+        const tabYears = document.getElementById('tab-years');
 
         
         const sidebar = document.getElementById('details-sidebar');
@@ -225,6 +227,7 @@
         
         tabTopics.addEventListener('click', () => switchTab('topics'));
         tabAuthors.addEventListener('click', () => switchTab('authors'));
+        tabYears.addEventListener('click', () => switchTab('years'));
 
         
         let resizeTimer;
@@ -245,14 +248,15 @@
             if (currentMode === mode) return;
             currentMode = mode;
             
+            // Reset tabs
+            tabTopics.classList.remove('active');
+            tabAuthors.classList.remove('active');
+            tabYears.classList.remove('active');
             
-            if (mode === 'topics') {
-                tabTopics.classList.add('active');
-                tabAuthors.classList.remove('active');
-            } else {
-                tabTopics.classList.remove('active');
-                tabAuthors.classList.add('active');
-            }
+            // Set active
+            if (mode === 'topics') tabTopics.classList.add('active');
+            else if (mode === 'authors') tabAuthors.classList.add('active');
+            else if (mode === 'years') tabYears.classList.add('active');
             
             closeSidebar();
             renderView();
@@ -295,7 +299,11 @@
 
             loadingEl.style.display = 'flex';
             loadingEl.style.opacity = '1';
-            statusText.textContent = currentMode === 'topics' ? "ANALYZING TOPICS..." : "ANALYZING AUTHORS...";
+            
+            if (currentMode === 'topics') statusText.textContent = "ANALYZING TOPICS...";
+            else if (currentMode === 'authors') statusText.textContent = "ANALYZING AUTHORS...";
+            else statusText.textContent = "ANALYZING TIMELINE...";
+
             svgElement.style.opacity = '0';
 
             setTimeout(() => {
@@ -303,14 +311,24 @@
                 if (currentMode === 'topics') {
                     data = countWords(cachedPapers);
                     statMax.textContent = `TOP TOPIC: ${data[0]?.text.toUpperCase() || '-'} (${data[0]?.value || 0})`;
-                } else {
+                    statCount.textContent = `WORDS: ${data.length}`;
+                    window.lastProcessedWords = data;
+                    generateCloud(data);
+                } else if (currentMode === 'authors') {
                     data = countAuthors(cachedPapers);
                     statMax.textContent = `TOP AUTHOR: ${data[0]?.text.toUpperCase() || '-'} (${data[0]?.value || 0})`;
+                    statCount.textContent = `AUTHORS: ${data.length}`;
+                    window.lastProcessedWords = data;
+                    generateCloud(data);
+                } else if (currentMode === 'years') {
+                    data = countYears(cachedPapers);
+                    // Find max
+                    const maxYear = data.reduce((max, p) => p.value > max.value ? p : max, data[0]);
+                    statMax.textContent = `PEAK YEAR: ${maxYear ? maxYear.text : '-'} (${maxYear ? maxYear.value : 0})`;
+                    statCount.textContent = `YEARS: ${data.length}`;
+                    window.lastProcessedWords = data;
+                    generateYearChart(data);
                 }
-                
-                statCount.textContent = `${currentMode === 'topics' ? 'WORDS' : 'AUTHORS'}: ${data.length}`;
-                window.lastProcessedWords = data;
-                generateCloud(data);
             }, 50);
         }
 
@@ -413,6 +431,118 @@
                 .slice(0, 100); 
         }
 
+        function countYears(papers) {
+            const counts = {};
+            papers.forEach(paper => {
+                if (!paper.date) return;
+                // Extract year (YYYY)
+                const year = paper.date.split('-')[0];
+                if (year && year.length === 4 && !isNaN(year)) {
+                    if (!counts[year]) counts[year] = { value: 0, papers: [] };
+                    counts[year].value++;
+                    counts[year].papers.push(paper);
+                }
+            });
+            
+            return Object.entries(counts)
+                .map(([text, data]) => ({ text, value: data.value, papers: data.papers }))
+                .sort((a, b) => a.text.localeCompare(b.text)); // Chronological order
+        }
+
+        function generateYearChart(data) {
+            const rect = container.getBoundingClientRect();
+            const margin = {top: 40, right: 40, bottom: 40, left: 50};
+            const width = rect.width - margin.left - margin.right;
+            const height = rect.height - margin.top - margin.bottom;
+
+            svgElement.selectAll("*").remove();
+            
+            const g = svgElement
+                .attr("viewBox", `0 0 ${rect.width} ${rect.height}`)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            // X Axis
+            const x = d3.scaleBand()
+                .range([0, width])
+                .domain(data.map(d => d.text))
+                .padding(0.2);
+
+            g.append("g")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x).tickSize(0).tickPadding(10))
+                .selectAll("text")
+                .style("font-family", "Inter")
+                .style("font-size", "10px")
+                .style("fill", "#94a3b8");
+
+            g.select(".domain").remove();
+
+            // Y Axis
+            const y = d3.scaleLinear()
+                .domain([0, d3.max(data, d => d.value)])
+                .range([height, 0]);
+                
+            // Optional: Y Axis ticks if needed, but labels are on bars
+            // g.append("g").call(d3.axisLeft(y).ticks(5)); 
+
+            // Bars
+            g.selectAll("rect")
+                .data(data)
+                .join("rect")
+                .attr("x", d => x(d.text))
+                .attr("y", height) // start bottom for anim
+                .attr("width", x.bandwidth())
+                .attr("height", 0) // start 0 height
+                .attr("fill", "#3b82f6")
+                .attr("rx", 4)
+                .style("cursor", "pointer")
+                .on("mouseover", function() {
+                    d3.select(this).attr("fill", "#60a5fa");
+                })
+                .on("mouseout", function() {
+                    d3.select(this).attr("fill", "#3b82f6");
+                })
+                .on("click", (event, d) => {
+                    event.stopPropagation();
+                    showPaperDetails(d);
+                })
+                .transition()
+                .duration(800)
+                .delay((d,i) => i * 50)
+                .attr("y", d => y(d.value))
+                .attr("height", d => height - y(d.value));
+
+            // Labels
+            g.selectAll(".label")
+                .data(data)
+                .join("text")
+                .attr("class", "label")
+                .attr("x", d => x(d.text) + x.bandwidth() / 2)
+                .attr("y", d => y(d.value) - 8)
+                .attr("text-anchor", "middle")
+                .text(d => d.value)
+                .style("font-family", "Inter")
+                .style("font-size", "12px")
+                .style("font-weight", "600")
+                .style("fill", "#ffffff")
+                .style("cursor", "pointer")
+                .on("click", (event, d) => {
+                    event.stopPropagation();
+                    showPaperDetails(d);
+                })
+                .style("opacity", 0)
+                .transition()
+                .delay((d,i) => i * 50 + 400)
+                .duration(400)
+                .style("opacity", 1);
+
+            // Finish loading
+            loadingEl.style.opacity = '0';
+            setTimeout(() => loadingEl.style.display = 'none', 500);
+            document.getElementById('word-cloud').style.opacity = '1';
+        }
+
         function generateCloud(words) {
             const rect = container.getBoundingClientRect();
             const width = rect.width; 
@@ -495,8 +625,11 @@
         }
 
         function showPaperDetails(itemData) {
-            
-            sidebarLabel.textContent = currentMode === 'topics' ? "SELECTED TOPIC" : "SELECTED AUTHOR";
+            // Label update logic handles all modes including years
+            if (currentMode === 'topics') sidebarLabel.textContent = "SELECTED TOPIC";
+            else if (currentMode === 'authors') sidebarLabel.textContent = "SELECTED AUTHOR";
+            else sidebarLabel.textContent = "SELECTED YEAR";
+
             sidebarTitle.textContent = itemData.text;
             sidebarCount.textContent = `Found in ${itemData.value} papers`;
 
